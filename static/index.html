@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>StudieBuddy</title>
+<style>
+  :root {
+    --bg: #f5f6f8; --panel: #ffffff; --text: #1d2330; --muted: #6b7280;
+    --border: #e3e6eb; --accent: #3b6ef5; --accent-text: #ffffff;
+    --bot: #eef1f6; --hover: #f0f3f9;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14171c; --panel: #1c2027; --text: #e6e8ec; --muted: #9aa3b2;
+      --border: #2c313a; --accent: #5b85f7; --accent-text: #ffffff;
+      --bot: #262b34; --hover: #232832;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    background: var(--bg); color: var(--text);
+    display: flex;
+  }
+
+  aside {
+    width: 260px; flex-shrink: 0; background: var(--panel);
+    border-right: 1px solid var(--border);
+    padding: 20px 16px; display: flex; flex-direction: column; gap: 20px;
+  }
+  aside h1 { font-size: 1.2rem; margin: 0; }
+  aside h2 { font-size: .8rem; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin: 0 0 8px; }
+  #geschiedenis { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+  #geschiedenis button {
+    width: 100%; text-align: left; background: none; border: 0; color: var(--text);
+    padding: 8px 10px; border-radius: 8px; cursor: pointer; font: inherit; font-size: .9rem;
+  }
+  #geschiedenis button:hover { background: var(--hover); }
+  .leeg { color: var(--muted); font-size: .9rem; }
+  .toggle { display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: .9rem; }
+
+  main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  #chat { flex: 1; overflow-y: auto; padding: 24px 16px; display: flex; flex-direction: column; gap: 12px; }
+  .bericht {
+    max-width: min(70ch, 85%); padding: 10px 14px; border-radius: 14px;
+    line-height: 1.45; white-space: pre-wrap; word-wrap: break-word;
+  }
+  .assistant { align-self: flex-start; background: var(--bot); border-bottom-left-radius: 4px; }
+  .user { align-self: flex-end; background: var(--accent); color: var(--accent-text); border-bottom-right-radius: 4px; }
+  .typen { color: var(--muted); font-style: italic; }
+
+  form {
+    display: flex; gap: 8px; padding: 12px 16px 16px;
+    border-top: 1px solid var(--border); background: var(--panel);
+  }
+  textarea {
+    flex: 1; resize: none; font: inherit; color: var(--text); background: var(--bg);
+    border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; max-height: 150px;
+  }
+  textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  form button {
+    background: var(--accent); color: var(--accent-text); border: 0; border-radius: 10px;
+    padding: 0 18px; font: inherit; font-weight: 600; cursor: pointer;
+  }
+  form button:disabled { opacity: .5; cursor: default; }
+
+  @media (max-width: 700px) {
+    body { flex-direction: column; }
+    aside { width: auto; border-right: 0; border-bottom: 1px solid var(--border); padding: 12px 16px; gap: 10px; }
+    #geschiedenis-blok { display: none; }
+  }
+</style>
+</head>
+<body>
+  <aside>
+    <h1>StudieBuddy</h1>
+    <label class="toggle"><input type="checkbox" id="context" checked> Context aan</label>
+    <div id="geschiedenis-blok">
+      <h2>Vorige vragen</h2>
+      <ul id="geschiedenis"></ul>
+    </div>
+  </aside>
+
+  <main>
+    <div id="chat"></div>
+    <form id="formulier">
+      <textarea id="invoer" rows="1" placeholder="Stel je vraag…" autofocus></textarea>
+      <button id="verstuur" type="submit">Verstuur</button>
+    </form>
+  </main>
+
+<script>
+  const chat = document.getElementById("chat");
+  const invoer = document.getElementById("invoer");
+  const knop = document.getElementById("verstuur");
+  const context = document.getElementById("context");
+
+  function toonBericht(rol, tekst, extraKlasse) {
+    const div = document.createElement("div");
+    div.className = `bericht ${rol} ${extraKlasse || ""}`;
+    div.textContent = tekst;
+    chat.appendChild(div);
+    chat.scrollTop = chat.scrollHeight;
+    return div;
+  }
+
+  function toonGeschiedenis(vragen) {
+    const lijst = document.getElementById("geschiedenis");
+    lijst.replaceChildren();
+    if (!vragen.length) {
+      lijst.innerHTML = '<li class="leeg">Nog geen vragen</li>';
+      return;
+    }
+    for (const vraag of [...vragen].reverse()) {
+      const li = document.createElement("li");
+      const b = document.createElement("button");
+      b.textContent = vraag;
+      b.title = "Opnieuw vragen";
+      b.onclick = () => { invoer.value = vraag; invoer.focus(); };
+      li.appendChild(b);
+      lijst.appendChild(li);
+    }
+  }
+
+  async function laad() {
+    const info = await (await fetch("/api/info")).json();
+    context.checked = info.context_aan;
+    toonGeschiedenis(info.vorige_vragen);
+    const groet = info.terug ? "welkom terug! Ik" : "ik";
+    toonBericht("assistant", `Hallo ${info.naam}, ${groet} ben je StudieBuddy. Wat wil je weten?`);
+    for (const b of info.berichten) toonBericht(b.role, b.content);
+  }
+
+  async function verstuur(e) {
+    e.preventDefault();
+    const vraag = invoer.value.trim();
+    if (!vraag || knop.disabled) return;
+
+    toonBericht("user", vraag);
+    invoer.value = "";
+    invoer.style.height = "";
+    knop.disabled = true;
+    const typen = toonBericht("assistant", "StudieBuddy is aan het typen…", "typen");
+
+    try {
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ vraag, context: context.checked }),
+      });
+      const data = await res.json();
+      typen.remove();
+      toonBericht("assistant", data.antwoord || data.fout || "Geen antwoord ontvangen.");
+      if (data.vorige_vragen) toonGeschiedenis(data.vorige_vragen);
+    } catch {
+      typen.remove();
+      toonBericht("assistant", "Kan de server niet bereiken. Draait app.py nog?");
+    } finally {
+      knop.disabled = false;
+      invoer.focus();
+    }
+  }
+
+  document.getElementById("formulier").addEventListener("submit", verstuur);
+  invoer.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !e.shiftKey) verstuur(e);
+  });
+  invoer.addEventListener("input", () => {
+    invoer.style.height = "";
+    invoer.style.height = invoer.scrollHeight + "px";
+  });
+  context.addEventListener("change", () => {
+    toonBericht("assistant", `[Context staat nu ${context.checked ? "AAN" : "UIT"}]`, "typen");
+  });
+
+  laad();
+</script>
+</body>
+</html>
